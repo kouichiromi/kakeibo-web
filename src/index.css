@@ -1,0 +1,191 @@
+:root {
+  --bg: #f6f7f8;
+  --panel: #ffffff;
+  --text: #111;
+  --muted: #667085;
+  --border: #e6e8ec;
+  --shadow: 0 10px 30px rgba(16, 24, 40, 0.08);
+
+  --primary: #2d7a4d;
+  --primarySoft: #e7f4ec;
+  --danger: #d92d20;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+
+.appShell { min-height: 100vh; }
+
+.topBar {
+  padding: 16px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.brand {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+.tabs { display: flex; gap: 10px; }
+.tab {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  padding: 10px 14px;
+  border-radius: 14px;
+  cursor: pointer;
+}
+.tab.active {
+  background: var(--primarySoft);
+  border-color: #cde7d8;
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.container {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 10px 18px 40px;
+}
+
+.section { margin-top: 22px; }
+.h2 { margin: 0 0 12px; font-size: 18px; font-weight: 800; }
+
+.row { display: flex; align-items: center; }
+.between { justify-content: space-between; }
+.wrap { flex-wrap: wrap; }
+.gap { gap: 10px; }
+.grow { flex: 1; min-width: 220px; }
+
+.period { display: grid; gap: 4px; }
+.periodLabel { font-size: 12px; color: var(--muted); }
+.periodValue { font-size: 16px; font-weight: 700; }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: var(--shadow);
+}
+.card.subtle { box-shadow: none; }
+.cardTitle { font-size: 13px; color: var(--muted); font-weight: 700; }
+.cardValue { font-size: 22px; font-weight: 900; margin-top: 6px; }
+
+.grid2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .grid2 { grid-template-columns: 1fr; }
+}
+
+.btn, .btnPrimary, .btnDanger {
+  border-radius: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  cursor: pointer;
+  font-weight: 700;
+}
+.btnPrimary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+}
+.btnDanger {
+  background: #fff5f5;
+  border-color: #ffd1d1;
+  color: var(--danger);
+}
+
+.input {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: #fff;
+  padding: 10px 12px;
+  border-radius: 12px;
+  outline: none;
+}
+.label { font-size: 12px; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
+.field { min-width: 160px; }
+
+.hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 10px; }
+.chip {
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  padding: 10px 14px;
+  cursor: pointer;
+  font-weight: 800;
+}
+.chip.active {
+  background: var(--primarySoft);
+  border-color: #cde7d8;
+  color: var(--primary);
+}
+.chipAmt { margin-left: 6px; color: var(--muted); font-weight: 800; }
+
+.list { display: grid; gap: 12px; }
+
+.txCard {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: var(--shadow);
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+.txLeft { min-width: 0; flex: 1; }
+.txTitle { font-size: 16px; font-weight: 900; margin-bottom: 4px; }
+.txMeta { font-size: 12px; color: var(--muted); font-weight: 700; }
+
+.txRight { display: grid; align-content: start; justify-items: end; gap: 10px; }
+.txAmount { font-size: 18px; font-weight: 900; }
+
+.txTags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.pill {
+  background: #f3f4f6;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #344054;
+  font-weight: 800;
+}
+
+.splits { margin-top: 10px; display: grid; gap: 6px; }
+.splitRow { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-weight: 700; font-size: 12px; }
+.splitMemo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.splitAmt { min-width: 90px; text-align: right; }
+
+.modalOverlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.25);
+  display: grid; place-items: center;
+  padding: 18px;
+}
+.modal {
+  width: min(920px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+.splitEditor { padding-top: 10px; }
+.divider { height: 1px; background: var(--border); margin-top: 14px; }
