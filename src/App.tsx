@@ -473,7 +473,7 @@ export default function App() {
   const NO_TAG_MONTH = "タグなし";
 
 if (!session) {
-  return <Login supabase={supabase} />;
+  return <Login />;
 }
   return (
     <div style={styles.page}>
