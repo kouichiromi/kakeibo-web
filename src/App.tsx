@@ -1326,4 +1326,47 @@ async function saveTransaction(tx: any) {
     amount: tx.amount,
     memo: tx.memo,
   });
+}async function loadTransactions() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("date", { ascending: false });
+
+  if (error) {
+    console.error(error);
+    return [];
+  }
+
+  return data ?? [];
 }
+useEffect(() => {
+  loadTransactions().then((data) => {
+    if (data) setTransactions(data);
+  });
+}, []);
+async function loadTransactions() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("date", { ascending: false });
+
+  if (error) {
+    console.error(error);
+    return [];
+  }
+
+  return data ?? [];
+}
+useEffect(() => {
+  loadTransactions().then((data) => {
+    if (data) setTransactions(data);
+  });
+}, []);
