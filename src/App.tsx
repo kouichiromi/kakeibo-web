@@ -1350,3 +1350,4 @@ async function saveTransaction(tx: any) {
     amount: tx.amount,
     memo: tx.memo,
   });
+}
