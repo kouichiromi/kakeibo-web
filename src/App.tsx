@@ -229,14 +229,16 @@ export default function App() {
   const [selectedYearlyTags, setSelectedYearlyTags] = useState<Set<string>>(new Set());
 
   async function reload() {
-    await ensureDefaults();
-    const s = await getSettings();
-    const t = await db.tagTemplates.orderBy("createdAt").toArray();
-    const list = await db.transactions.orderBy("createdAt").toArray();
-    setSettings(s ?? { monthStartDay: 1 });
-    setTags(t);
-    setTxs(list);
-  }
+  await ensureDefaults();
+  const s = await getSettings();
+  const t = await db.tagTemplates.orderBy("createdAt").toArray();
+
+  const list = await loadTransactions(); // ← Supabase
+
+  setSettings(s ?? { monthStartDay: 1 });
+  setTags(t);
+  setTxs(list);
+}
 
   useEffect(() => {
     reload();
