@@ -20,30 +20,7 @@ function toJpDate(iso: string) {
   const [y, m, d] = iso.split("-").map((x) => Number(x));
   return `${y}年${m}月${d}日`;
 }
-function App() {
 
-  const [transactions, setTransactions] = useState([]);
-
-  async function loadTransactions() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return [];
-
-    const { data } = await supabase
-      .from("transactions")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("date", { ascending: false });
-
-    return data ?? [];
-  }
-
-  useEffect(() => {
-    loadTransactions().then((data) => {
-      if (data) setTransactions(data);
-    });
-  }, []);
-
-}
 
 function addMonths(dateISO: string, diff: number) {
   const [y, m, d] = dateISO.split("-").map(Number);
