@@ -367,7 +367,7 @@ export default function App() {
 
     const exists = await db.transactions.get(next.id);
     if (exists) await db.transactions.put(next);
-    else await db.transactions.add(next);
+    else await saveTransaction(next);
 
     setShowEditor(false);
     setEditing(null);
@@ -419,7 +419,23 @@ export default function App() {
     await importFromJson(text);
     await reload();
   }
+async function saveTransaction(tx: any) {
+  const { data: { user } } = await supabase.auth.getUser();
 
+  if (!user) return;
+
+  const { error } = await supabase.from("transactions").insert({
+    user_id: user.id,
+    date: tx.date,
+    category: tx.category,
+    amount: tx.amount,
+    memo: tx.memo,
+  });
+
+  if (error) {
+    console.error(error);
+  }
+}
   // ---- Yearly (タグ別：年間累計 / 月別) ----
   const yearly = useMemo(() => {
     const NO_TAG = "タグなし";
@@ -1298,3 +1314,16 @@ const styles: Record<string, React.CSSProperties> = {
   monthNum: { fontWeight: 800, color: "#344054" },
   monthNumStrong: { fontWeight: 900, color: "#101828" },
 };
+async function saveTransaction(tx: any) {
+  const user = (await supabase.auth.getUser()).data.user;
+
+  if (!user) return;
+
+  await supabase.from("transactions").insert({
+    user_id: user.id,
+    date: tx.date,
+    category: tx.category,
+    amount: tx.amount,
+    memo: tx.memo,
+  });
+}
