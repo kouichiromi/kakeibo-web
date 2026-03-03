@@ -391,9 +391,7 @@ export default function App() {
       updatedAt: now,
     };
 
-    const exists = await db.transactions.get(next.id);
-    if (exists) await db.transactions.put(next);
-    else await saveTransaction(next);
+    await saveTransaction(next);
 
     setShowEditor(false);
     setEditing(null);
