@@ -371,7 +371,7 @@ export default function App() {
     });
 
     // まとめて追加（高速）
-    await db.transactions.bulkAdd(copies);
+    await saveTransaction.bulkAdd(copies);
 
     alert(`前月 ${prevTx.length} 件を今月にコピーしました。`);
     await reload();
@@ -400,7 +400,7 @@ export default function App() {
 
   async function deleteTx(id: string) {
     if (!confirm("この取引を削除しますか？")) return;
-    await db.transactions.delete(id);
+    await saveTransaction.delete(id);
     await reload();
   }
 
