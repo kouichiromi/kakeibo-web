@@ -979,6 +979,8 @@ const styles: Record<string, React.CSSProperties> = {
     background: "linear-gradient(180deg, #F6FAF7 0%, #EEF6F0 100%)",
     padding: "28px 16px",
     color: "#101828",
+    overflowX: "hidden",
+    boxSizing: "border-box",
   },
   container: {
     maxWidth: 920,
@@ -1039,14 +1041,16 @@ const styles: Record<string, React.CSSProperties> = {
   },
   sectionBody: {},
   periodRow: {
-    display: "grid",
-    gridTemplateColumns: "120px 1fr 120px",
-    gap: 12,
+    display: "flex",
     alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
   },
   periodText: {
     textAlign: "center",
     lineHeight: 1.4,
+    fontSize: 13,
+    flex: 1,
   },
   summaryGrid: {
     display: "grid",
@@ -1126,8 +1130,8 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 12,
     alignItems: "flex-start",
   },
-  cardLeft: { minWidth: 0 },
-  cardRight: { textAlign: "right", minWidth: 140 },
+  cardLeft: { minWidth: 0, flex: 1 },
+  cardRight: { textAlign: "right", flexShrink: 0 },
   txTitle: { fontSize: 18, fontWeight: 900, marginBottom: 4 },
   txMeta: {
     fontSize: 13,
