@@ -3,7 +3,18 @@ import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "./lib/supabase";
 import Login from "./Login";
 
-import { db, ensureDefaults, getSettings, setMonthStartDay } from "./db";
+import {
+  ensureDefaults,
+  getSettings,
+  setMonthStartDay,
+  getTagTemplates,
+  addTagTemplate,
+  deleteTagTemplate,
+  loadTransactions,
+  saveTransaction,
+  bulkSaveTransactions,
+  deleteTransaction,
+} from "./db";
 import type { AppSettings, TagTemplate, Transaction, TxType, Split } from "./types";
 import { exportToJson, importFromJson, downloadJson } from "./storage";
 
@@ -21,7 +32,6 @@ function toJpDate(iso: string) {
   return `${y}年${m}月${d}日`;
 }
 
-
 function addMonths(dateISO: string, diff: number) {
   const [y, m, d] = dateISO.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
@@ -29,7 +39,6 @@ function addMonths(dateISO: string, diff: number) {
   return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
 }
 
-// ✅ コピー用：翌月の同日（存在しない日は月末に丸める）
 function addOneMonthSameDay(iso: string) {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
@@ -38,9 +47,8 @@ function addOneMonthSameDay(iso: string) {
   const target = new Date(dt);
   target.setMonth(baseMonth + 1);
 
-  // setMonth により「翌々月」へ飛んだ場合（例: 1/31 → 3/2）を月末へ補正
   if (target.getMonth() !== ((baseMonth + 1) % 12)) {
-    const last = new Date(y, m, 0); // 翌月の0日 = 当月末（JS仕様）
+    const last = new Date(y, m, 0);
     return `${last.getFullYear()}-${pad2(last.getMonth() + 1)}-${pad2(last.getDate())}`;
   }
 
@@ -96,20 +104,6 @@ function monthFromISO(iso: string) {
   return Number(iso.slice(5, 7));
 }
 
-/**
- * ✅ タグ集計（完全対応）
- * 要件:
- * - 取引に付けたタグも反映
- * - 内訳(splits)に付けたタグも反映
- *
- * ルール:
- * - 取引タグ(tx.tagNames)があるなら「取引合計金額（splits合計 or amountYen）」を取引タグへ加算
- * - splitsがあるなら「各split金額」をsplitタグへ加算（splitタグ無しなら NO_TAG）
- * - タグが無ければ NO_TAG
- *
- * 注意:
- * - 取引タグと内訳タグの両方を使うと、同一取引の金額が両方のタグへ入る（仕様どおり「両方反映」）
- */
 function buildTagAmountMap(tx: Transaction, NO_TAG: string): Map<string, number> {
   const map = new Map<string, number>();
 
@@ -141,7 +135,6 @@ function buildTagAmountMap(tx: Transaction, NO_TAG: string): Map<string, number>
   return map;
 }
 
-/** ✅ 月次：タグ合計（取引タグ + 内訳タグの両方を反映） */
 function tagTotalWithSplits(txs: Transaction[], tag: string, NO_TAG: string) {
   let total = 0;
   for (const t of txs) {
@@ -151,7 +144,6 @@ function tagTotalWithSplits(txs: Transaction[], tag: string, NO_TAG: string) {
   return total;
 }
 
-/** ✅ フィルタ一致：取引タグ or 内訳タグのどれかに含まれる */
 function txMatchesSelectedTags(tx: Transaction, selected: Set<string>) {
   if (selected.size === 0) return true;
 
@@ -167,59 +159,51 @@ function txMatchesSelectedTags(tx: Transaction, selected: Set<string>) {
 }
 
 export default function App() {
-
   const [session, setSession] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-  supabase.auth.getSession().then(({ data }) => {
-    setSession(data.session);
-  });
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setLoading(false);
+    });
 
-  const { data: listener } =
-    supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
 
-  return ()=> {
-    listener?.subscription?.unsubscribe();
-  };
-}, []);
-  const [tab, setTab] = useState<TabKey>("monthly");
+    return () => {
+      listener?.subscription?.unsubscribe();
+    };
+  }, []);
 
+  const [tab, setTab] = useState<TabKey>("monthly");
   const [settings, setSettings] = useState<AppSettings>({ monthStartDay: 1 });
   const [tags, setTags] = useState<TagTemplate[]>([]);
   const [txs, setTxs] = useState<Transaction[]>([]);
-
   const [refISO, setRefISO] = useState<string>(todayISO());
-
-  // 月次のタグフィルタ（複数選択）
   const [selectedFilterTags, setSelectedFilterTags] = useState<Set<string>>(new Set());
-
-  // 取引編集モーダル
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [showEditor, setShowEditor] = useState(false);
-
-  // 年間
   const [year, setYear] = useState<number>(new Date().getFullYear());
-
-  // 年間のタグフィルタ（複数選択）
   const [selectedYearlyTags, setSelectedYearlyTags] = useState<Set<string>>(new Set());
 
   async function reload() {
-  await ensureDefaults();
-  const s = await getSettings();
-  const t = await db.tagTemplates.orderBy("createdAt").toArray();
+    await ensureDefaults();
+    const s = await getSettings();
+    const t = await getTagTemplates();
+    const list = await loadTransactions();
 
-  const list = await loadTransactions(); // ← Supabase
-
-  setSettings(s ?? { monthStartDay: 1 });
-  setTags(t);
-  setTxs(list);
-}
+    setSettings(s ?? { monthStartDay: 1 });
+    setTags(t);
+    setTxs(list);
+  }
 
   useEffect(() => {
-    reload();
-  }, []);
+    if (session) {
+      reload();
+    }
+  }, [session]);
 
   const period = useMemo(() => startOfPeriod(refISO, settings.monthStartDay), [refISO, settings.monthStartDay]);
 
@@ -238,7 +222,6 @@ export default function App() {
   const incomeTotal = useMemo(() => sumAmount(txInPeriod, "income"), [txInPeriod]);
   const expenseTotal = useMemo(() => sumAmount(txInPeriod, "expense"), [txInPeriod]);
 
-  // 前月残（前期間の収支）
   const prevRef = useMemo(() => addMonths(period.startISO, -1), [period.startISO]);
   const prevPeriod = useMemo(() => startOfPeriod(prevRef, settings.monthStartDay), [prevRef, settings.monthStartDay]);
   const prevTx = useMemo(() => txs.filter((t) => t.periodStartISO === prevPeriod.startISO), [txs, prevPeriod.startISO]);
@@ -246,7 +229,6 @@ export default function App() {
   const carryPrev = useMemo(() => sumAmount(prevTx, "income") - sumAmount(prevTx, "expense"), [prevTx]);
   const carryThis = useMemo(() => carryPrev + incomeTotal - expenseTotal, [carryPrev, incomeTotal, expenseTotal]);
 
-  // ---- UI actions ----
   function toggleFilterTag(name: string) {
     setSelectedFilterTags((prev) => {
       const next = new Set(prev);
@@ -293,27 +275,16 @@ export default function App() {
     setShowEditor(true);
   }
 
-  /**
-   * ✅ 一括コピー：前月(periodStartISO=prevPeriod.startISO)の取引を、今月(period.startISO)に全件コピー
-   * - 元データは触らない
-   * - 新規IDで追加（splitsも新規ID）
-   * - dateISO は翌月へ（同日。存在しない日は月末）
-   * - 保存先 periodStartISO は「今見ている月」に固定
-   *
-   * 注意:
-   * - すでに今月に取引がある場合、二重追加になる可能性があるので警告する
-   */
   async function bulkCopyPrevMonthToThisMonth() {
     if (prevTx.length === 0) {
       alert("前月の取引がありません。");
       return;
     }
 
-    // 今月に既に取引がある場合は二重追加になりやすいので確認
     if (txInPeriod.length > 0) {
       const ok = confirm(
         `今月(${toJpDate(period.startISO)}〜)には既に ${txInPeriod.length} 件の取引があります。\n` +
-          `このまま一括コピーすると “追加” になるため、二重計上の可能性があります。\n\n` +
+          `このまま一括コピーすると "追加" になるため、二重計上の可能性があります。\n\n` +
           `それでも前月 ${prevTx.length} 件を一括コピーしますか？`
       );
       if (!ok) return;
@@ -339,7 +310,7 @@ export default function App() {
         dateISO: addOneMonthSameDay(base.dateISO),
         amountYen: fixedAmount,
         splits: nextSplits,
-        periodStartISO: period.startISO, // ✅ 今月に固定
+        periodStartISO: period.startISO,
         createdAt: now,
         updatedAt: now,
       };
@@ -347,8 +318,7 @@ export default function App() {
       return copied;
     });
 
-    // まとめて追加（高速）
-    await saveTransaction.bulkAdd(copies);
+    await bulkSaveTransactions(copies);
 
     alert(`前月 ${prevTx.length} 件を今月にコピーしました。`);
     await reload();
@@ -357,7 +327,6 @@ export default function App() {
   async function saveTx(draft: Transaction) {
     const now = Date.now();
 
-    // splitsがある場合は合計で amountYen を確定（表示用）
     const sumSplits = (draft.splits || []).reduce((acc, s) => acc + (s.amountYen || 0), 0);
     const fixedAmount = (draft.splits || []).length > 0 ? sumSplits : draft.amountYen || 0;
 
@@ -377,11 +346,10 @@ export default function App() {
 
   async function deleteTx(id: string) {
     if (!confirm("この取引を削除しますか？")) return;
-    await saveTransaction.delete(id);
+    await deleteTransaction(id);
     await reload();
   }
 
-  // ---- Settings ----
   async function onChangeStartDay(day: number) {
     await setMonthStartDay(day);
     await reload();
@@ -393,7 +361,7 @@ export default function App() {
     const exists = tags.some((t) => t.name === trimmed);
     if (exists) return;
 
-    await db.tagTemplates.add({
+    await addTagTemplate({
       id: uid(),
       name: trimmed,
       createdAt: Date.now(),
@@ -403,11 +371,10 @@ export default function App() {
 
   async function removeTag(id: string) {
     if (!confirm("このタグを削除しますか？")) return;
-    await db.tagTemplates.delete(id);
+    await deleteTagTemplate(id);
     await reload();
   }
 
-  // ---- Backup ----
   async function doExport() {
     const json = await exportToJson();
     downloadJson(`kakeibo-backup-${Date.now()}.json`, json);
@@ -420,24 +387,14 @@ export default function App() {
     await importFromJson(text);
     await reload();
   }
-async function saveTransaction(tx: any) {
-  const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) return;
-
-  const { error } = await supabase.from("transactions").insert({
-    user_id: user.id,
-    date: tx.date,
-    category: tx.category,
-    amount: tx.amount,
-    memo: tx.memo,
-  });
-
-  if (error) {
-    console.error(error);
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    setSession(null);
+    setTxs([]);
+    setTags([]);
   }
-}
-  // ---- Yearly (タグ別：年間累計 / 月別) ----
+
   const yearly = useMemo(() => {
     const NO_TAG = "タグなし";
     const target = txs.filter((t) => yearFromISO(t.periodStartISO) === year);
@@ -454,7 +411,6 @@ async function saveTransaction(tx: any) {
       return { month: m, income: mi, expense: me, diff: mi - me, txs: monthTx };
     });
 
-    // ✅ タグ別（取引タグ + 内訳タグの両方を反映）
     const tagYearTotals: Record<string, number> = {};
     const tagMonthTotals: Record<number, Record<string, number>> = {};
     for (let m = 1; m <= 12; m++) tagMonthTotals[m] = {};
@@ -472,7 +428,6 @@ async function saveTransaction(tx: any) {
       }
     }
 
-    // 表示するタグ一覧（設定 + データ）
     const fromSettings = tags.map((x) => x.name);
     const fromData = Array.from(allTagsFromData);
     const allTagNames = Array.from(new Set([...fromSettings, ...fromData]));
@@ -489,9 +444,18 @@ async function saveTransaction(tx: any) {
 
   const NO_TAG_MONTH = "タグなし";
 
-if (!session) {
-  return <Login />;
-}
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
+        <div style={{ fontSize: 18, color: "#667085", fontWeight: 700 }}>読み込み中...</div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <Login />;
+  }
+
   return (
     <div style={styles.page}>
       <div style={styles.container}>
@@ -511,6 +475,9 @@ if (!session) {
             <TabButton active={tab === "backup"} onClick={() => setTab("backup")}>
               バックアップ
             </TabButton>
+            <button style={styles.logoutBtn} onClick={handleLogout}>
+              ログアウト
+            </button>
           </div>
         </div>
 
@@ -538,7 +505,6 @@ if (!session) {
                 </button>
               </div>
 
-              {/* ✅ 一括コピー（前月→今月） */}
               <div style={{ marginTop: 12, display: "flex", justifyContent: "center", gap: 10, flexWrap: "wrap" }}>
                 <button style={styles.copyBtn} onClick={bulkCopyPrevMonthToThisMonth}>
                   前月を一括コピー（今月へ追加）
@@ -560,8 +526,6 @@ if (!session) {
 
             <Section title="タグ">
               <div style={styles.chips}>
-                {/* ※「すべて」は不要との要望で削除済み */}
-
                 <Chip
                   selected={selectedFilterTags.has(NO_TAG_MONTH)}
                   onClick={() => toggleFilterTag(NO_TAG_MONTH)}
@@ -645,7 +609,7 @@ if (!session) {
         )}
 
         {/* ===========================
-            年間（タグ付き）
+            年間
         =========================== */}
         {tab === "yearly" && (
           <div>
@@ -767,7 +731,7 @@ if (!session) {
         =========================== */}
         {tab === "backup" && (
           <div>
-            <Section title="バックアップ / 復元（ローカルJSON）">
+            <Section title="バックアップ / 復元（JSON）">
               <div style={styles.rowGap}>
                 <button style={styles.primaryBtn} onClick={doExport}>
                   バックアップ（JSON）
@@ -782,7 +746,7 @@ if (!session) {
                   />
                 </label>
               </div>
-              <div style={styles.helpText}>※ 完全ローカル運用です。バックアップしたJSONは自分で保管してください。</div>
+              <div style={styles.helpText}>※ Macで保存した既存のJSONバックアップを復元すれば、iPhoneでも同じデータが見られます。</div>
             </Section>
           </div>
         )}
@@ -986,7 +950,7 @@ function TxEditorModal(props: { tags: TagTemplate[]; draft: Transaction; onClose
             </button>
           </div>
 
-          <div style={styles.helpText}>※ 内訳がある場合は金額は自動で内訳合計になります（反映ボタン不要）。</div>
+          <div style={styles.helpText}>※ 内訳がある場合は金額は自動で内訳合計になります。</div>
         </div>
 
         <div style={styles.modalActions}>
@@ -1050,7 +1014,15 @@ const styles: Record<string, React.CSSProperties> = {
     borderColor: "#B7D7BF",
     boxShadow: "0 8px 20px rgba(16,24,40,0.06)",
   },
-
+  logoutBtn: {
+    padding: "10px 14px",
+    borderRadius: 14,
+    border: "1px solid #E6EDE7",
+    background: "rgba(255,255,255,0.85)",
+    cursor: "pointer",
+    fontWeight: 700,
+    color: "#667085",
+  },
   section: {
     marginTop: 18,
     marginBottom: 18,
@@ -1066,7 +1038,6 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 10,
   },
   sectionBody: {},
-
   periodRow: {
     display: "grid",
     gridTemplateColumns: "120px 1fr 120px",
@@ -1077,7 +1048,6 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: "center",
     lineHeight: 1.4,
   },
-
   summaryGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
@@ -1091,7 +1061,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
   summaryLabel: { fontSize: 13, color: "#667085", fontWeight: 700 },
   summaryValue: { fontSize: 20, fontWeight: 900, marginTop: 6 },
-
   chips: {
     display: "flex",
     gap: 10,
@@ -1109,7 +1078,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderColor: "#7EC28E",
     background: "#EAF6EE",
   },
-
   primaryBtn: {
     padding: "10px 14px",
     borderRadius: 14,
@@ -1136,8 +1104,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 900,
     color: "#B42318",
   },
-
-  // ✅ 一括コピー専用ボタン（目立たせる）
   copyBtn: {
     padding: "10px 14px",
     borderRadius: 14,
@@ -1147,7 +1113,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 900,
     color: "#027A48",
   },
-
   list: { display: "grid", gap: 12 },
   card: {
     borderRadius: 18,
@@ -1173,7 +1138,6 @@ const styles: Record<string, React.CSSProperties> = {
     textOverflow: "ellipsis",
   },
   txAmount: { fontSize: 18, fontWeight: 900 },
-
   splitsBox: {
     marginTop: 10,
     paddingTop: 10,
@@ -1197,16 +1161,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   splitTags: { fontSize: 12, color: "#98A2B3", fontWeight: 800, whiteSpace: "nowrap" },
   splitAmt: { fontSize: 13, color: "#667085", fontWeight: 900, textAlign: "right" },
-
   cardActions: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 12 },
-
   row: { display: "flex", alignItems: "center", gap: 12 },
   rowGap: { display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" },
   rowBetween: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 },
   select: { padding: "10px 12px", borderRadius: 12, border: "1px solid #E6EDE7", background: "#fff" },
   input: { padding: "10px 12px", borderRadius: 12, border: "1px solid #E6EDE7", background: "#fff", width: "100%" },
   helpText: { marginTop: 10, fontSize: 12, color: "#667085", fontWeight: 700 },
-
   empty: {
     padding: 14,
     borderRadius: 14,
@@ -1215,7 +1176,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#667085",
     fontWeight: 800,
   },
-
   fileBtn: {
     display: "inline-flex",
     alignItems: "center",
@@ -1227,7 +1187,6 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontWeight: 900,
   },
-
   modalOverlay: {
     position: "fixed",
     inset: 0,
@@ -1250,7 +1209,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
   modalTitle: { fontSize: 18, fontWeight: 900, marginBottom: 12 },
   modalActions: { display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 16 },
-
   formGrid: {
     display: "grid",
     gridTemplateColumns: "140px 1fr",
@@ -1263,8 +1221,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 12,
     background: "#FBFDFB",
   },
-
-  // yearly
   yearHeader: {
     display: "flex",
     alignItems: "center",
@@ -1315,16 +1271,3 @@ const styles: Record<string, React.CSSProperties> = {
   monthNum: { fontWeight: 800, color: "#344054" },
   monthNumStrong: { fontWeight: 900, color: "#101828" },
 };
-async function saveTransaction(tx: any) {
-  const user = (await supabase.auth.getUser()).data.user;
-
-  if (!user) return;
-
-  await supabase.from("transactions").insert({
-    user_id: user.id,
-    date: tx.date,
-    category: tx.category,
-    amount: tx.amount,
-    memo: tx.memo,
-  });
-}

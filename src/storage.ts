@@ -1,30 +1,24 @@
-import { db, ensureDefaults, getSettings } from "./db";
-import type { DbExport } from "./types";
+// storage.ts
+import { loadTransactions, getTagTemplates, getSettings, bulkSaveTransactions, addTagTemplate, setMonthStartDay } from "./db";
+import type { DbExport, TagTemplate } from "./types";
 
 export async function exportToJson(): Promise<string> {
-  await ensureDefaults();
-
   const settings = await getSettings();
-  const tagTemplates = await db.tagTemplates.toArray();
-  const categoryTemplates = await db.categoryTemplates.toArray();
-  const transactions = await db.transactions.toArray();
+  const tagTemplates = await getTagTemplates();
+  const transactions = await loadTransactions();
 
   const payload: DbExport = {
     version: 1,
     exportedAt: Date.now(),
     settings,
     tagTemplates,
-    categoryTemplates,
+    categoryTemplates: [], // 互換性のため残す
     transactions,
   };
 
   return JSON.stringify(payload, null, 2);
 }
 
-/**
- * 既存データは「上書き」する（= 完全復元）
- * 安全のため import 前に confirm を出すのがUI側の役割
- */
 export async function importFromJson(json: string) {
   const parsed = JSON.parse(json) as DbExport;
 
@@ -32,24 +26,21 @@ export async function importFromJson(json: string) {
     throw new Error("不正なバックアップ形式です（versionが一致しません）");
   }
 
-  await db.transaction(
-    "rw",
-    db.settings,
-    db.tagTemplates,
-    db.categoryTemplates,
-    db.transactions,
-    async () => {
-      await db.settings.clear();
-      await db.tagTemplates.clear();
-      await db.categoryTemplates.clear();
-      await db.transactions.clear();
+  // 設定を復元
+  await setMonthStartDay(parsed.settings.monthStartDay);
 
-      await db.settings.put({ id: "app", value: parsed.settings });
-      await db.tagTemplates.bulkPut(parsed.tagTemplates);
-      await db.categoryTemplates.bulkPut(parsed.categoryTemplates);
-      await db.transactions.bulkPut(parsed.transactions);
-    }
-  );
+  // タグを復元（既存タグは削除せず追加）
+  for (const tag of parsed.tagTemplates) {
+    const t: TagTemplate = {
+      id: tag.id,
+      name: tag.name,
+      createdAt: tag.createdAt,
+    };
+    await addTagTemplate(t).catch(() => {}); // 重複は無視
+  }
+
+  // 取引を復元（upsertなので既存は上書き）
+  await bulkSaveTransactions(parsed.transactions);
 }
 
 export function downloadJson(filename: string, json: string) {

@@ -1,51 +1,177 @@
-import Dexie from "dexie";
-import type { Table } from "dexie";
-import type { AppSettings, CategoryTemplate, TagTemplate, Transaction } from "./types";
+// db.ts
+// IndexedDB（Dexie）は廃止し、Supabaseに完全移行
 
-type SettingsRow = {
-  id: "app";
-  value: AppSettings;
-};
+import { supabase } from "./lib/supabase";
+import type { AppSettings, TagTemplate, Transaction } from "./types";
 
-export class KakeiboDB extends Dexie {
-  settings!: Table<SettingsRow, "app">;
-  tagTemplates!: Table<TagTemplate, string>;
-  categoryTemplates!: Table<CategoryTemplate, string>;
-  transactions!: Table<Transaction, string>;
-
-  constructor() {
-    super("kakeibo-web");
-
-    this.version(1).stores({
-      settings: "id",
-      tagTemplates: "id, createdAt, name",
-      categoryTemplates: "id, createdAt, type, name",
-      transactions: "id, periodStartISO, dateISO, type, createdAt, updatedAt",
-    });
-  }
-}
-
-export const db = new KakeiboDB();
-
-// ---------- helpers ----------
-export async function ensureDefaults() {
-  const s = await db.settings.get("app");
-  if (!s) {
-    await db.settings.put({
-      id: "app",
-      value: { monthStartDay: 1 },
-    });
-  }
-}
+// =============================================
+// Settings
+// =============================================
 
 export async function getSettings(): Promise<AppSettings> {
-  await ensureDefaults();
-  return (await db.settings.get("app"))!.value;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { monthStartDay: 1 };
+
+  const { data } = await supabase
+    .from("settings")
+    .select("month_start_day")
+    .eq("user_id", user.id)
+    .single();
+
+  return { monthStartDay: data?.month_start_day ?? 1 };
 }
 
 export async function setMonthStartDay(day: number) {
-  await ensureDefaults();
-  const row = await db.settings.get("app");
-  await db.settings.put({ id: "app", value: { monthStartDay: day } });
-  return row?.value;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  await supabase
+    .from("settings")
+    .upsert({ user_id: user.id, month_start_day: day });
+}
+
+export async function ensureDefaults() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { data } = await supabase
+    .from("settings")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .single();
+
+  if (!data) {
+    await supabase
+      .from("settings")
+      .insert({ user_id: user.id, month_start_day: 1 });
+  }
+}
+
+// =============================================
+// Tag Templates
+// =============================================
+
+export async function getTagTemplates(): Promise<TagTemplate[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data } = await supabase
+    .from("tag_templates")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: true });
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    createdAt: row.created_at,
+  }));
+}
+
+export async function addTagTemplate(tag: TagTemplate) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  await supabase.from("tag_templates").insert({
+    id: tag.id,
+    user_id: user.id,
+    name: tag.name,
+    created_at: tag.createdAt,
+  });
+}
+
+export async function deleteTagTemplate(id: string) {
+  await supabase.from("tag_templates").delete().eq("id", id);
+}
+
+// =============================================
+// Transactions
+// =============================================
+
+export async function loadTransactions(): Promise<Transaction[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("loadTransactions error:", error);
+    return [];
+  }
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    amountYen: row.amount_yen,
+    dateISO: row.date_iso,
+    periodStartISO: row.period_start_iso,
+    tagNames: row.tag_names ?? [],
+    splits: row.splits ?? [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function saveTransaction(tx: Transaction) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const row = {
+    id: tx.id,
+    user_id: user.id,
+    type: tx.type,
+    title: tx.title,
+    amount_yen: tx.amountYen,
+    date_iso: tx.dateISO,
+    period_start_iso: tx.periodStartISO,
+    tag_names: tx.tagNames,
+    splits: tx.splits,
+    created_at: tx.createdAt,
+    updated_at: tx.updatedAt,
+  };
+
+  const { error } = await supabase
+    .from("transactions")
+    .upsert(row, { onConflict: "id" });
+
+  if (error) console.error("saveTransaction error:", error);
+}
+
+export async function bulkSaveTransactions(txs: Transaction[]) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const rows = txs.map((tx) => ({
+    id: tx.id,
+    user_id: user.id,
+    type: tx.type,
+    title: tx.title,
+    amount_yen: tx.amountYen,
+    date_iso: tx.dateISO,
+    period_start_iso: tx.periodStartISO,
+    tag_names: tx.tagNames,
+    splits: tx.splits,
+    created_at: tx.createdAt,
+    updated_at: tx.updatedAt,
+  }));
+
+  const { error } = await supabase
+    .from("transactions")
+    .upsert(rows, { onConflict: "id" });
+
+  if (error) console.error("bulkSaveTransactions error:", error);
+}
+
+export async function deleteTransaction(id: string) {
+  const { error } = await supabase
+    .from("transactions")
+    .delete()
+    .eq("id", id);
+
+  if (error) console.error("deleteTransaction error:", error);
 }
